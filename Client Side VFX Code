@@ -1,0 +1,570 @@
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local TextChatService = game:GetService("TextChatService")
+local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+
+
+local LocalPlayer = Players.LocalPlayer
+local LocalCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local LocalHumanoid = LocalCharacter:WaitForChild("Humanoid")
+
+
+local CurrentCamera = workspace.CurrentCamera
+
+
+local RBXGeneral = TextChatService:WaitForChild("TextChannels"):WaitForChild("RBXGeneral")
+
+
+local Recources = ReplicatedStorage:FindFirstChild("Resources")
+local Replication = ReplicatedStorage:FindFirstChild("Replication")
+
+
+local ServicesModule = require(ReplicatedStorage:FindFirstChild("Services"))
+local VFX_Utility = ServicesModule:GetService("VFX_Utility")
+
+
+local RaycastParams = RaycastParams.new()
+RaycastParams.FilterType = Enum.RaycastFilterType.Include
+RaycastParams.FilterDescendantsInstances = {
+	workspace.Map,
+	workspace.Built
+}
+
+
+local allReplications = {
+	["Rock Trail"] = function(Info)
+		
+		local Character = Info.Avatar
+		local Size = Info.Size
+		local Side = Info.Side
+		local Rate = Info.Rate
+		local Duration = Info.Duration
+		
+		local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+
+		for i = 1, Duration/Rate do
+			
+			local Raycast = workspace:Raycast(HumanoidRootPart.Position, Vector3.new(0, -5, 0), RaycastParams)
+			
+			if Raycast then
+				
+				local Smoke = HumanoidRootPart:FindFirstChild("BottomPart").Smoke["Smoke"]
+				
+				if Smoke then
+					Smoke:Emit(5)
+				end
+				
+			end
+			
+			local function newRock(Result)
+				
+				local Raycast = workspace:Raycast(HumanoidRootPart.CFrame * CFrame.new(Result, 0, 0).Position, Vector3.new(0,-3.5,0), RaycastParams)
+				
+				if Raycast ~= nil then
+					
+					local Time = math.random(4,6)
+					
+					local Part = Recources:FindFirstChild("LegacyReplication"):FindFirstChild("Rock Trail"):Clone()
+					
+					Part.Parent = workspace.Other
+					Part.Color = Raycast.Instance.Color
+					Part.Material = Raycast.Material
+					
+					local partPosition = Raycast.Position + Vector3.new(math.random(-65,65) / 100, 0, math.random(-65,65) / 100)
+					
+					Part.Position = partPosition + Vector3.new(0,(-Part.Size.Y * 1.5),0)
+
+					TweenService:Create(Part, TweenInfo.new(0.25), {
+						Size = Vector3.new(Size,Size,Size),
+						Position = partPosition
+					}):Play()
+
+					Part.Orientation = Vector3.new(math.random(-180,180),math.random(-180.,180),math.random(-180,180))
+					
+					task.delay(Time, function()
+						
+						TweenService:Create(Part, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+							Size = Part.Size / 1.5,
+							Position = Part.Position + Vector3.new(0, (-Part.Size.Y * 1.5), 0),
+							Orientation = Vector3.new(math.random(-180,180),math.random(-180.,180),math.random(-180,180))
+						}):Play()
+						
+					end)
+					
+					game.Debris:AddItem(Part, Time + 1)
+					
+				end
+			end
+
+			task.spawn(function()
+				
+				newRock(Side)
+				newRock(-Side)
+				
+			end)
+
+			task.wait(Rate)
+			
+		end
+		
+	end,
+	["Rock Circle"] = function(Info)
+		
+		if Info.Detection == true then
+			
+			local Character: Model = Info.Avatar
+			local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+
+			repeat task.wait() until HumanoidRootPart.AssemblyLinearVelocity.Magnitude > 1
+
+			local Ray
+			
+			repeat task.wait() Ray = workspace:Raycast(HumanoidRootPart.Position, HumanoidRootPart.AssemblyLinearVelocity.Unit * 20, RaycastParams) until Ray or not Character.Parent or not Character.Modifiers:FindFirstChild("Ragdoll")
+
+			if not Character.Parent or not Character.Modifiers:FindFirstChild("Ragdoll") or not Ray then return end
+
+			Info["Ray"] = Ray
+			Info["CFrame"] = HumanoidRootPart.CFrame
+			
+		end
+		
+		local ICFrame = Info.CFrame
+		local IDirection = Info.Direction or Vector3.new(0,-10,0)
+		
+		if ICFrame ~= nil then
+			
+			local Raycast
+			
+			local ISize = Vector3.new(Info.Size.X, Info.Size.Y, Info.Size.Z)
+			local IParts = Info.Parts
+			local IRadius = Info.Radius
+			
+			if Info.Ray then Raycast = Info.Ray else
+				Raycast = workspace:Raycast(ICFrame.Position, IDirection, RaycastParams)
+			end
+			
+			if Raycast == nil then return end
+			
+			local newCFrame = CFrame.new(Raycast.Position, Raycast.Position - Raycast.Normal) * CFrame.Angles(math.rad(90), math.rad(math.random(0,360)), 0) * CFrame.new(0,1,0)
+			
+			if Info.Debris ~= nil then
+
+				local IDebris = Info.Debris
+				local IAmount = IDebris.Amount
+
+				for i = 1, IAmount do
+					
+					local Size = math.random(IDebris.Size, IDebris.Size * 1.5)
+					local Time = math.random(5,8)
+
+					local Part = Recources:FindFirstChild("LegacyReplication")["Rock Debris"]:Clone()
+					Part.Size = Vector3.new(Size, Size, Size)
+					Part.Material = Raycast.Instance.Material
+					Part.Color = Raycast.Instance.Color
+					Part.Position = Raycast.Position + Vector3.new(0, Part.Size.Y / 2, 0)
+					Part.Parent = workspace.Other
+
+					local Body = Instance.new("BodyVelocity", Part)
+					Body.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
+					Body.Velocity = Vector3.new(math.random(-25,25), math.random(20, 80), math.random(-25, 25))
+					game.Debris:AddItem(Body, 0.2)
+
+					local Angular = Instance.new("BodyAngularVelocity", Part)
+					Angular.MaxTorque = Vector3.new(5000,5000,5000)
+					Angular.AngularVelocity = Vector3.new(math.random(-50,50) / 10, math.random(-50,50) / 10, math.random(-50,50) / 10)
+					game.Debris:AddItem(Angular, 0.2)
+
+					task.delay(Time, function()
+
+						TweenService:Create(Part, TweenInfo.new(0.5), {
+							Size = Part.Size / 1.5,
+							Transparency = 1
+						}):Play()
+
+					end)
+
+					game.Debris:AddItem(Part, Time + 0.5)
+
+				end
+
+			end
+			
+			if Info.Smoke == true then
+				
+				local Part = Recources:FindFirstChild("LegacyReplication")["Rock Smoke"]:Clone()
+				Part.CFrame = newCFrame
+				Part.Parent = workspace.Other
+				for i, v in pairs(Part:GetDescendants()) do
+					if v:IsA("ParticleEmitter") and v:GetAttribute("emitRate") then
+						
+						v.Color = ColorSequence.new(Raycast.Instance.Color)
+						v:Emit(v:GetAttribute("emitRate"))
+						
+					end
+				end
+				game.Debris:AddItem(Part, 5)
+				
+			end
+			
+			local newRandom = Random.new()
+			
+			for I = 1, Info.Rows do
+				
+				local IMultiplies = Info.Multiplies
+				local IAngles = Info.Angles
+				
+				if I > 1 then
+					IRadius = IRadius + (IMultiplies.Radius or 0); IParts = IParts * (IMultiplies.Parts or 1); ISize = Vector3.new((Info.Size.X * math.random(1,1.25)) * (IMultiplies.Size or 1), (Info.Size.Y * math.random(1,1.25)) * (IMultiplies.Size or 1), (Info.Size.Z * math.random(1,1.25)) * (IMultiplies.Size or 1))
+				end
+				
+				for Index = 1, IParts do
+
+					local angle = newRandom:NextNumber(0, 2 * math.pi)
+					local distance = newRandom:NextNumber((IRadius / 2) * IMultiplies.Radius, IRadius * IMultiplies.Radius)
+					local offset = Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
+					local drop = newCFrame * CFrame.Angles(0, angle, 0) * CFrame.new(0, 2, -distance)
+					
+					local PRay = workspace:Raycast(drop.Position, -drop.UpVector * (distance * 2), RaycastParams)
+					local Time = math.random(8,12)
+
+					if PRay ~= nil then
+
+						local Part = Recources:FindFirstChild("LegacyReplication")["Rock Default"]:Clone()
+						Part.Size = ISize
+						Part.Material = PRay.Instance.Material
+						Part.Color = PRay.Instance.Color
+						Part.Parent = workspace.Other
+
+						local UG = drop.Rotation * CFrame.new(0, -Part.Size.Y / 2 - 0.25, 0) + PRay.Position
+						local Origin = UG * CFrame.new(0, 1, 0) * CFrame.Angles(math.rad(newRandom:NextNumber(IAngles.Minimum, IAngles.Maximum)), 0, 0)
+
+						Part.CFrame = UG
+
+						TweenService:Create(Part, TweenInfo.new(newRandom:NextNumber(0.1, 0.15), Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+							CFrame = Origin
+						}):Play()
+
+						task.delay(Time, function()
+							
+							TweenService:Create(Part, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {
+								CFrame = Part.CFrame * CFrame.new(0, -(Part.Size.Y + Part.Size.Y / 2), 0),
+								Size = Part.Size / 1.5
+							}):Play()
+							
+						end)
+
+						game.Debris:AddItem(Part, Time + 1)
+
+					end
+
+				end
+				
+			end
+			
+		end
+		
+	end,
+	["Destroy"] = function(Info)
+		
+		local List = Info.List
+		
+		for i, v in pairs(List) do
+			if Info.Type == "Stadium" then
+
+				local Stadium = v
+				local Respawn = math.random(30,45)
+
+				if not Stadium:FindFirstChild("Broken") then
+
+					local Broken = Instance.new("Accessory")
+					Broken.Name = "Broken"
+					Broken.Parent = Stadium
+					game.Debris:AddItem(Broken, Respawn + 1)
+
+					Stadium.Transparency = 1
+					Stadium.CanCollide = false
+
+					local Broken_Stadium = Recources:FindFirstChild("LegacyReplication")["Broken Stadium"]:Clone()
+					Broken_Stadium.Parent = workspace.Other
+					Broken_Stadium:PivotTo(Stadium.CFrame)
+					game.Debris:AddItem(Broken_Stadium, 10)
+
+					for i, v in pairs(Broken_Stadium:GetChildren()) do
+
+						local Time = math.random(5,8)
+
+						local Body = Instance.new("BodyVelocity", v)
+						Body.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
+						Body.Velocity = Vector3.new(math.random(-25,25), math.random(20, 80), math.random(-25, 25))
+						game.Debris:AddItem(Body, 0.2)
+
+						local Angular = Instance.new("BodyAngularVelocity", v)
+						Angular.MaxTorque = Vector3.new(5000,5000,5000)
+						Angular.AngularVelocity = Vector3.new(math.random(-50,50) / 10, math.random(-50,50) / 10, math.random(-50,50) / 10)
+						game.Debris:AddItem(Angular, 0.2)
+
+						task.delay(5, function()
+
+							TweenService:Create(v, TweenInfo.new(0.8), {
+								Size = Vector3.new(v.Size.X / 1.5, v.Size.Y, v.Size.Z / 1.5),
+								Transparency = 1
+							}):Play()
+
+						end)
+
+						game.Debris:AddItem(v, Time + 0.8)
+
+					end
+
+					task.delay(Respawn, function()
+
+						local defaultSize = Stadium.Size
+						Stadium.Size = Vector3.new(Stadium.Size.X / 1.5, Stadium.Size.Y, Stadium.Size.Z / 1.5)
+
+						TweenService:Create(Stadium, TweenInfo.new(1), {
+							Transparency = 0,
+							Size = defaultSize
+						}):Play()
+
+						Stadium.CanCollide = true
+
+					end)
+
+				end
+
+			elseif Info.Type == "Bench" then
+
+				local Bench = v
+				local Respawn = math.random(40,60)
+
+				if not Bench:FindFirstChild("Broken") then
+
+					local Broken_Bench = Bench:Clone()
+
+					for i, v in pairs(Broken_Bench:GetChildren()) do
+
+						v.CanCollide = false
+						v.Anchored = false
+
+						local Body = Instance.new("BodyVelocity", v)
+						Body.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
+						Body.Velocity = Vector3.new(math.random(-20,20), math.random(20, 50), math.random(-20, 20))
+						game.Debris:AddItem(Body, 0.2)
+
+						local Angular = Instance.new("BodyAngularVelocity", v)
+						Angular.MaxTorque = Vector3.new(5000,5000,5000)
+						Angular.AngularVelocity = Vector3.new(math.random(-50,50) / 10, math.random(-50,50) / 10, math.random(-50,50) / 10)
+						game.Debris:AddItem(Angular, 0.2)
+
+						game.Debris:AddItem(v, 5)
+
+					end
+
+					Broken_Bench.Parent = workspace.Other
+					game.Debris:AddItem(Broken_Bench, 10)
+
+					local Broken = Instance.new("Accessory")
+					Broken.Name = "Broken"
+					Broken.Parent = Bench
+					game.Debris:AddItem(Broken, Respawn + 1)
+
+					for i, v in pairs(Bench:GetChildren()) do
+						if v:IsA("Part") then
+
+							v.Transparency = 1
+							v.CanCollide = false
+
+						end
+					end
+
+					task.delay(Respawn, function()
+
+						for i, v in pairs(Bench:GetChildren()) do
+							if v:IsA("Part") then
+
+								TweenService:Create(v, TweenInfo.new(1), {
+									Transparency = 0
+								}):Play()
+
+								v.CanCollide = true
+
+							end
+						end
+
+					end)
+
+				end
+
+			elseif Info.Type == "Trashcan" then
+
+				local Trashcan = v
+				local Respawn = math.random(25,40)
+
+				if not Trashcan:FindFirstChild("Broken") then
+
+					local Broken_Trashcan = Trashcan:Clone()
+
+					for i, v in pairs(Broken_Trashcan:GetChildren()) do
+
+						v.CollisionGroup = "Debris"
+						v.Anchored = false
+
+						local Body = Instance.new("BodyVelocity", v)
+						Body.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
+						Body.Velocity = Vector3.new(math.random(-20,20), math.random(20, 50), math.random(-20, 20))
+						game.Debris:AddItem(Body, 0.2)
+
+						local Angular = Instance.new("BodyAngularVelocity", v)
+						Angular.MaxTorque = Vector3.new(5000,5000,5000)
+						Angular.AngularVelocity = Vector3.new(math.random(-50,50) / 10, math.random(-50,50) / 10, math.random(-50,50) / 10)
+						game.Debris:AddItem(Angular, 0.2)
+
+						game.Debris:AddItem(v, 15)
+
+					end
+
+					Broken_Trashcan.Parent = workspace.Other
+					game.Debris:AddItem(Broken_Trashcan, 15)
+
+					local Broken = Instance.new("Accessory")
+					Broken.Name = "Broken"
+					Broken.Parent = Trashcan
+					game.Debris:AddItem(Broken, Respawn + 1)
+
+					for i, v in pairs(Trashcan:GetChildren()) do
+						if v:IsA("MeshPart") then
+
+							v.Transparency = 1
+							v.CanCollide = false
+
+						end
+					end
+
+					task.delay(Respawn, function()
+
+						for i, v in pairs(Trashcan:GetChildren()) do
+							if v:IsA("MeshPart") then
+
+								TweenService:Create(v, TweenInfo.new(1), {
+									Transparency = 0
+								}):Play()
+
+								v.CanCollide = true
+
+							end
+						end
+
+					end)
+
+				end
+
+			elseif Info.Type == "Tree" then
+
+				local Tree = v
+				local Respawn = math.random(60,75)
+
+				if not Tree:FindFirstChild("Broken") then
+
+					local Broken_Tree = Tree:Clone()
+
+					for i, v in pairs(Broken_Tree:GetDescendants()) do
+						if v:IsA("Part") or v:IsA("MeshPart") or v:IsA("UnionOperation") then
+
+							v.CanCollide = false
+							v.Anchored = false
+
+							local Body = Instance.new("BodyVelocity", v)
+							Body.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
+							Body.Velocity = Vector3.new(math.random(-25,25), math.random(50,100), math.random(-25,25))
+							game.Debris:AddItem(Body, 0.2)
+
+							local Angular = Instance.new("BodyAngularVelocity", v)
+							Angular.MaxTorque = Vector3.new(5000,5000,5000)
+							Angular.AngularVelocity = Vector3.new(math.random(-50,50) / 10, math.random(-50,50) / 10, math.random(-50,50) / 10)
+							game.Debris:AddItem(Angular, 0.2)
+
+							game.Debris:AddItem(v, 15)
+
+						end
+					end
+
+					Broken_Tree.Parent = workspace.Other
+					game.Debris:AddItem(Broken_Tree, 15)
+
+					local Broken = Instance.new("Accessory")
+					Broken.Name = "Broken"
+					Broken.Parent = Tree
+					game.Debris:AddItem(Broken, Respawn + 1)
+
+					for i, v in pairs(Tree:GetDescendants()) do
+						if v:IsA("MeshPart") or v:IsA("Part") or v:IsA("UnionOperation") then
+
+							v.Transparency = 1
+							v.CanCollide = false
+
+						end
+					end
+
+					task.delay(Respawn, function()
+
+						for i, v in pairs(Tree:GetDescendants()) do
+							if v:IsA("MeshPart") or v:IsA("Part") or v:IsA("UnionOperation") then
+
+								TweenService:Create(v, TweenInfo.new(1), {
+									Transparency = 0
+								}):Play()
+
+								v.CanCollide = true
+
+							end
+						end
+
+					end)
+
+				end
+
+			end
+		end
+		
+	end,
+	["Highlight"] = function(Info)
+		
+		local Avatar = Info.Avatar
+		
+		local Highlight = Instance.new("Highlight")
+		Highlight.OutlineColor = Color3.new(1, 1, 1)
+		Highlight.FillColor = Color3.new(1, 1, 1)
+		Highlight.OutlineTransparency = Info.OutlineTransparency
+		Highlight.FillTransparency = Info.FillTransparency
+		TweenService:Create(Highlight, TweenInfo.new(Info.Duration), {
+			OutlineTransparency = 1,
+			FillTransparency = 1
+		}):Play()
+		Highlight.Parent = Avatar
+		game.Debris:AddItem(Highlight, Info.Duration)
+		
+	end,
+	["Ring"] = function(Info)
+
+		local Position = Info.Position
+
+		local Ring = Recources:FindFirstChild("LegacyReplication"):FindFirstChild("Ring"):Clone()
+		if typeof(Position) == "Vector3" then
+			Ring.Position = Position
+		else
+			Ring.CFrame = Position
+		end
+		TweenService:Create(Ring, TweenInfo.new(Info.Duration), {
+			Size = Info.Size,
+			Transparency = 1
+		}):Play()
+		Ring.Parent = workspace.Other
+		game.Debris:AddItem(Ring, Info.Duration)
+
+	end,
+}
