@@ -1,0 +1,1324 @@
+local PathfindingService = game:GetService("PathfindingService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local TweenService = game:GetService("TweenService")
+
+
+local BodyMover = require(ServerStorage.System:FindFirstChild("BodyMover"))
+local Knockback = require(ServerStorage.System:FindFirstChild("Knockback"))
+local Animator = require(ServerStorage.System:FindFirstChild("Animator"))
+local Destroy = require(ServerStorage.System:FindFirstChild("Destroy"))
+local Damage = require(ServerStorage.System:FindFirstChild("Damage"))
+local ByPass = require(ServerStorage.System:FindFirstChild("ByPass"))
+local Hitbox = require(ServerStorage.System:FindFirstChild("Hitbox"))
+local Utility = require(ReplicatedStorage:FindFirstChild("Utility"))
+local Sound = require(ServerStorage.System:FindFirstChild("Sound"))
+local Weld = require(ServerStorage.System:FindFirstChild("Weld"))
+
+
+local Replication = ReplicatedStorage:FindFirstChild("Replication")
+
+
+local Info = require(ReplicatedStorage:FindFirstChild("Info"))
+local Settings = require(script:FindFirstChild("Settings"))
+
+
+local Character = script.Parent
+local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+
+Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+Humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+
+local AlignOrientation = HumanoidRootPart:FindFirstChildOfClass("AlignOrientation")
+
+local Animator = Humanoid:FindFirstChildOfClass("Animator")
+
+if not Animator then
+	Animator = Instance.new("Animator", Humanoid)
+end
+
+local Moveset = Character:FindFirstChild("Moveset")
+
+task.wait()
+
+print("➕ Ragdoll setup... (" .. tostring(Character.Name) .. ")")
+
+require(ServerStorage.System.Ragdoll)(Character)
+
+task.wait()
+
+print("➕ Cache setup... (" .. tostring(Character.Name) .. ")")
+
+local Modifiers = Character:WaitForChild("Modifiers")
+local Mods_Cache = {}
+
+local function updateCache()
+
+	Mods_Cache = {}
+
+	for i, v in pairs(Modifiers:GetChildren()) do
+		Mods_Cache[v.Name] = true
+	end
+
+end
+
+Modifiers.ChildAdded:Connect(updateCache)
+Modifiers.ChildRemoved:Connect(updateCache)
+
+updateCache()
+
+task.wait()
+
+print("➕ Animations setup... (" .. tostring(Character.Name) .. ")")
+
+local Animations = {
+	["Block"] = Animator:LoadAnimation(script.Animations:FindFirstChild("Block")),
+	["Idle"] = Animator:LoadAnimation(script.Animations:FindFirstChild("Idle")),
+	["Run"] = Animator:LoadAnimation(script.Animations:FindFirstChild("Run")),
+	["Walk"] = Animator:LoadAnimation(script.Animations:FindFirstChild("Walk"))
+}
+
+Animations["Idle"].Looped = true
+Animations["Idle"].Priority = Enum.AnimationPriority.Movement
+
+Animations["Walk"].Looped = true
+Animations["Walk"].Priority = Enum.AnimationPriority.Movement
+
+Animations["Block"].Looped = true
+Animations["Block"].Priority = Enum.AnimationPriority.Movement
+
+task.wait(0.1)
+
+print("🕐 Starting... (" .. tostring(Character.Name) .. ")")
+
+local DashCooldowns = {
+	["Forward"] = false,
+	["Right"] = false,
+	["Left"] = false,
+	["Back"] = false,
+	["Evasive"] = false
+}
+
+local DashCooldownsTime = {
+	["Forward"] = 5,
+	["Right"] = 2.5,
+	["Left"] = 2.5,
+	["Back"] = 5,
+	["Evasive"] = 40
+}
+
+local DashesPlaying = {
+	["Forward"] = false,
+	["Right"] = false,
+	["Left"] = false
+}
+
+local StartPos = nil
+
+local function Evasive()
+
+	for i, v in pairs(Modifiers:GetChildren()) do
+		if v:IsA("Accessory") and v.Name == "Ragdoll" then
+
+			v:Destroy()
+
+		end
+	end
+
+	local IFrames = Instance.new("NumberValue")
+	IFrames.Name = "IFrames"
+	IFrames.Value = 1
+	IFrames.Parent = Modifiers
+	game.Debris:AddItem(IFrames, 0.5)
+
+	Replication:FireAllClients("Evasive", {
+		Avatar = Character
+	})
+
+end
+
+local function Dash(currDirection, Cancel, Retreat)
+	
+	DashCooldowns[tostring(currDirection)] = true; task.delay(DashCooldownsTime[tostring(currDirection)], function()
+		DashCooldowns[tostring(currDirection)] = false
+	end)
+	
+	if currDirection == "Left" or currDirection == "Right" then
+		
+		local oppositeDirection = currDirection == "Right" and "Left" or "Right"
+		
+		if DashesPlaying["Forward"] or DashesPlaying[tostring(oppositeDirection)] then return end
+		
+		if Modifiers:FindFirstChild("Ragdoll") and Cancel then
+			Evasive() DashCooldowns["Evasive"] = true; task.delay(DashCooldownsTime["Evasive"], function()
+				DashCooldowns["Evasive"] = false
+			end)
+		elseif Modifiers:FindFirstChild("Ragdoll") and not Cancel then
+			return
+		end
+		
+		DashCooldowns[tostring(oppositeDirection)] = true; task.delay(DashCooldownsTime[tostring(currDirection)], function()
+			DashCooldowns[tostring(oppositeDirection)] = false
+		end)
+		
+		DashCooldowns["Forward"] = true; task.delay(DashCooldownsTime[tostring(currDirection)] / 1.5, function()
+			DashCooldowns["Forward"] = false
+		end)
+		
+		DashesPlaying[tostring(currDirection)] = true
+		
+		local Animation = Instance.new("Animation"); game.Debris:AddItem(Animation, 0.5)
+		Animation.AnimationId = "rbxassetid://" .. Info["Movesets"]["Cursed Vessel"].Dash[tostring(currDirection)]
+
+		for i, v in pairs(HumanoidRootPart:GetChildren()) do
+			if v:IsA("BodyVelocity") then
+
+				v:Destroy()
+
+			end
+		end
+
+		local Track = Animator:LoadAnimation(Animation)
+		Track:AdjustWeight(0.001, 0)
+		Track:Play()
+
+		local additionalItems = {
+			["Stats"] = {},
+			["Connections"] = {}
+		}
+		
+		local Side_Dashing = Instance.new("Accessory")
+		Side_Dashing.Name = "Side Dashing"
+		Side_Dashing.Parent = Modifiers
+		Side_Dashing:SetAttribute("Side", tostring(currDirection))
+		if Retreat then
+			Side_Dashing:SetAttribute("Retreat", true)
+		end
+		table.insert(additionalItems["Stats"], Side_Dashing)
+		game.Debris:AddItem(Side_Dashing, 1.5)
+
+		local Cant_Jump = Instance.new("Accessory")
+		Cant_Jump.Name = "Cant Jump"
+		Cant_Jump.Parent = Modifiers
+		table.insert(additionalItems["Stats"], Cant_Jump)
+		game.Debris:AddItem(Cant_Jump, 1.5)
+
+		additionalItems["Connections"]["Stopped"] = Track.Stopped:Once(function()
+			
+			DashesPlaying[tostring(currDirection)] = false
+
+			for i, v in pairs(additionalItems) do
+				for i, v in pairs(v) do
+					if typeof(v) == "RBXScriptConnection" then
+
+						v:Disconnect()
+
+					elseif v:IsA("Accessory") then
+
+						v:Destroy()
+
+					end
+				end
+			end
+
+			Track:Destroy()
+
+		end)
+
+		local Velocity = Instance.new("BodyVelocity")
+		Velocity.Name = "Dash Velocity"
+		Velocity.MaxForce = Vector3.new(100000, 0, 100000)
+		Velocity.Parent = HumanoidRootPart
+
+		local Speed = Instance.new("NumberValue")
+		Speed.Value = 115
+
+		local Multiply = -1
+
+		if currDirection == "Right" then
+			Multiply = 1
+		end
+
+		local Connection
+
+		Connection = game["Run Service"].Stepped:Connect(function()
+			if Modifiers:FindFirstChild("Stunned") or Velocity.Parent == nil then
+
+				Connection:Disconnect()
+
+				if Velocity ~= nil then
+					Velocity.Velocity = Vector3.new(0, 0, 0)
+				end
+
+			else
+
+				Velocity.Velocity = HumanoidRootPart.CFrame.RightVector * (Speed.Value * Multiply)
+
+			end
+		end)
+
+		task.delay(0.1,function()
+			TweenService:Create(Speed, TweenInfo.new(0.3), {
+				Value = 10
+			}):Play()
+		end)
+
+		local Debris = Speed
+
+		for i = 1, 2 do
+
+			game.Debris:AddItem(Debris, 0.5)
+			Debris = Velocity
+
+		end
+		
+		task.delay(.5, function()
+			Connection:Disconnect()
+		end)
+		
+	elseif currDirection == "Forward" then
+		
+		if DashesPlaying["Right"] or DashesPlaying["Left"] or Modifiers:FindFirstChild("Ragdoll") then return end
+		
+		DashesPlaying[tostring(currDirection)] = true
+		StartPos = Character:FindFirstChild("HumanoidRootPart").Position
+		
+		local Animation = Instance.new("Animation"); game.Debris:AddItem(Animation, 0.5)
+		Animation.AnimationId = "rbxassetid://" .. Info["Movesets"][Character:GetAttribute("Moveset")].Dash[tostring(currDirection)]
+
+		for i, v in pairs(HumanoidRootPart:GetChildren()) do
+			if v:IsA("BodyVelocity") then
+
+				v:Destroy()
+
+			end
+		end
+
+		local Track = Animator:LoadAnimation(Animation)
+		Track:AdjustWeight(0.001, 0)
+		Track:Play()
+
+		local additionalItems = {
+			["Stats"] = {},
+			["Connections"] = {}
+		}
+		
+		local Forward_Dashing = Instance.new("Accessory")
+		Forward_Dashing.Name = "Forward Dashing"
+		Forward_Dashing.Parent = Modifiers
+		table.insert(additionalItems["Stats"], Forward_Dashing)
+		game.Debris:AddItem(Forward_Dashing, 2.5)
+
+		local Attacking = Instance.new("Accessory")
+		Attacking.Name = "Attacking"
+		Attacking.Parent = Modifiers
+		table.insert(additionalItems["Stats"], Attacking)
+		game.Debris:AddItem(Attacking, 2.5)
+
+		local Cant_Jump = Instance.new("Accessory")
+		Cant_Jump.Name = "Cant Jump"
+		Cant_Jump.Parent = Modifiers
+		table.insert(additionalItems["Stats"], Cant_Jump)
+		game.Debris:AddItem(Cant_Jump, 2.5)
+
+		local Cant_Move = Instance.new("Accessory")
+		Cant_Move.Name = "Cant Move"
+		Cant_Move.Parent = Modifiers
+		table.insert(additionalItems["Stats"], Cant_Move)
+		game.Debris:AddItem(Cant_Move, 2.5)
+
+		Replication:FireAllClients("Rock Trail", {
+			Avatar = Character,
+			Size = 0.625,
+			Side = 2.5,
+			Rate = 0.15,
+			Duration = 0.65
+		})
+
+		Replication:FireAllClients("Ring", {
+			Position = Character:FindFirstChild("HumanoidRootPart").CFrame * CFrame.new(0, 0, -4.1) * CFrame.Angles(math.rad(90),math.rad(0),math.rad(0)),
+			Size = Vector3.new(12,0.6,12),
+			Duration = 0.25
+		})
+		
+		Sound(Character:FindFirstChild("HumanoidRootPart"), ServerStorage["Sounds"]["Combat"]["Forward Dash"])
+
+		local Velocity = Instance.new("BodyVelocity")
+		Velocity.Name = "Dash Velocity"
+		Velocity.MaxForce = Vector3.new(1, 0, 1) * 40000
+		Velocity.P = 1250
+		Velocity.Parent = HumanoidRootPart
+
+		local Speed = Instance.new("NumberValue")
+		Speed.Value = 160
+
+		local RaycastParams = RaycastParams.new()
+		RaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+		RaycastParams.FilterDescendantsInstances = {
+			Character,
+			workspace.Map:GetDescendants(),
+			workspace.Built:GetDescendants(),
+			workspace.Leaderboards:GetDescendants()
+		}
+
+		local Connection
+
+		local dashStart = tick()
+
+		Connection = game["Run Service"].Stepped:Connect(function()
+
+			if Modifiers:FindFirstChild("Stunned") or Velocity.Parent == nil then
+
+				Connection:Disconnect()
+
+				if Velocity ~= nil then
+					Velocity.Velocity = Vector3.new(0, 0, 0)
+				end
+
+				return
+
+			end
+
+			local Raycast = workspace:Raycast(HumanoidRootPart.Position, HumanoidRootPart.CFrame.LookVector * 5, RaycastParams)
+
+			if Raycast ~= nil and Raycast.Instance.Parent:FindFirstChild("Humanoid") then
+
+				local Victim = Raycast.Instance.Parent
+
+				if not Victim:FindFirstChild("Modifiers"):FindFirstChild("Ragdoll") then
+
+					Connection:Disconnect()
+
+					if Velocity ~= nil then
+						Velocity.Velocity = Vector3.new(0, 0, 0)
+					end
+
+					additionalItems["Connections"]["freeze"]:Disconnect()
+					Track:AdjustSpeed(2)
+
+				end
+
+			else
+
+				Velocity.Velocity = HumanoidRootPart.CFrame.LookVector * Speed.Value
+
+			end
+		end)
+
+		local TweenTime = TweenService:Create(Speed, TweenInfo.new(0.7), {
+			Value = 20
+		}):Play()
+
+		local Debris = Speed
+
+		for i = 1, 2 do
+
+			game.Debris:AddItem(Debris, 0.7)
+			Debris = Velocity
+
+		end
+
+		task.delay(0.7, function()
+			Connection:Disconnect()
+		end)
+
+		additionalItems["Connections"]['land'] = Track:GetMarkerReachedSignal("land"):Once(function()
+
+			Track:AdjustSpeed(1)
+			
+			local Cant_Move = Instance.new("Accessory")
+			Cant_Move.Name = "Cant Move"
+			Cant_Move.Parent = Modifiers
+			game.Debris:AddItem(Cant_Move, 0.35)
+
+		end)
+
+		additionalItems["Connections"]['hit'] = Track:GetMarkerReachedSignal("hit"):Once(function()
+
+			local newHitbox = Hitbox.new(
+				Character:FindFirstChild("HumanoidRootPart").CFrame,
+				Vector3.new(6,6,7.25),
+				CFrame.new(0, 0, -4.535)
+			)
+
+			Hitbox:Cast(newHitbox, "Single", {Character}, function(Victim)
+				if ByPass(Character, Victim, 0, false, true, true) then
+
+					local Parent = Character
+
+					for i = 1, 2 do
+
+						local ParentPlayer = game:GetService("Players"):GetPlayerFromCharacter(Parent)
+
+						if ParentPlayer == nil then else
+
+							local Settings = ParentPlayer:WaitForChild("Settings")
+
+							local Camera_Shake = Settings:FindFirstChild("Camera Shake")
+							if Camera_Shake.Value == false then continue end
+
+							Replication:FireClient(ParentPlayer, "Camera Shake", {
+								Magnitude = 1.5,
+								Roughness = 4,
+								Influence = Vector3.new(2.5,2.5,2.5),
+								Time = 0.25
+							})
+
+						end
+
+						Parent = Victim
+
+					end
+
+					if Victim.Modifiers:FindFirstChild("Blocking") and not Utility:IsBehind(Victim, Character) then
+
+						local Stunned = Instance.new("Accessory")
+						Stunned.Name = "Stunned"
+						Stunned.Parent = Character:FindFirstChild("Modifiers")
+						game.Debris:AddItem(Stunned, 0.5)
+
+						return
+
+					end
+
+					local IsRagdoll = Victim.Modifiers:FindFirstChild("Ragdoll")
+					local IsUppercut = Victim.Modifiers:FindFirstChild("In Uppercut")
+
+					local VictimPos = Victim:FindFirstChild("HumanoidRootPart").Position
+
+					local Distance = (StartPos - VictimPos).Magnitude
+					local InRange = Distance <= 22.5
+
+					shared.stopAnimations(Victim)
+
+					if IsRagdoll and IsUppercut then
+
+						Damage(Character, Victim, 5)
+
+						Knockback(Victim, math.random(160, 175), Character:FindFirstChild("HumanoidRootPart").Position)
+
+					else
+
+						if InRange then
+
+							Damage(Character, Victim, 5)
+
+							Knockback(Victim, math.random(160, 175), Character:FindFirstChild("HumanoidRootPart").Position)
+
+						else
+
+							if not Victim.Modifiers:FindFirstChild("No Stun") then
+								local Stunned = Instance.new("Accessory")
+								Stunned.Name = "Stunned"
+								Stunned.Parent = Victim:FindFirstChild("Modifiers")
+								game.Debris:AddItem(Stunned, 0.85)
+							end
+
+							Replication:FireAllClients("Forward Hit", {
+								Avatar = Victim
+							})
+
+							Damage(Character, Victim, 4)
+
+						end
+
+					end
+
+					Sound(Victim:FindFirstChild("HumanoidRootPart"), ServerStorage["Sounds"]["Combat"]["Dash Hit"])
+
+				end
+			end)
+
+			Hitbox:Clear(newHitbox)
+
+		end)
+
+		additionalItems["Connections"]["freeze"] = Track:GetMarkerReachedSignal("freeze"):Once(function()
+
+			local Speed = 0.1
+
+			if Character:GetAttribute("Moveset") == "God of Radiance" then
+				Speed = 0.6
+			end
+
+			Track:AdjustSpeed(Speed)
+
+		end)
+
+		additionalItems["Connections"]["Stopped"] = Track.Stopped:Once(function()
+			
+			DashesPlaying[tostring(currDirection)] = false
+			
+			Connection:Disconnect()
+			StartPos = nil
+
+			for i, v in pairs(additionalItems) do
+				for i, v in pairs(v) do
+					if typeof(v) == "RBXScriptConnection" then
+
+						v:Disconnect()
+
+					elseif v:IsA("Accessory") then
+
+						v:Destroy()
+
+					end
+				end
+			end
+
+			Track:Destroy()
+
+		end)
+
+		task.delay(0.7, function()
+			if Track.IsPlaying == true then
+
+				Connection:Disconnect()
+				Track:AdjustSpeed(1)
+
+			end
+		end)
+		
+	end
+	
+end
+
+local additionalItems = {
+	["Block"] = {}
+}
+
+local updateDistance = 2.5
+local stuckThreshold = 0.5
+local ray_offset = Vector3.new(0, 2, 0)
+
+local currentConnection = nil
+local lastGoalPos = Vector3.zero
+local lastCheckPos = Vector3.zero
+local lastCheckTime = tick()
+
+local function stopMovement()
+	if currentConnection then
+		currentConnection:Disconnect()
+		currentConnection = nil
+	end
+end
+
+local function hasLineOfSight(targetPos)
+	
+	local origin = HumanoidRootPart.Position + ray_offset
+	local direction = (targetPos + ray_offset) - origin
+
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = {Character}
+	params.FilterType = Enum.RaycastFilterType.Exclude
+
+	local result = workspace:Raycast(origin, direction, params)
+	
+	return result == nil 
+	
+end
+
+local function followPath(waypoints)
+	
+	stopMovement()
+	
+	local index = 2
+
+	currentConnection = game["Run Service"].Stepped:Connect(function()
+		
+		if index > #waypoints then
+			stopMovement()
+			return
+		end
+
+		local point = waypoints[index]
+		Humanoid:MoveTo(point.Position)
+
+		if point.Action == Enum.PathWaypointAction.Jump then
+			Humanoid.Jump = true
+		end
+		
+		if (HumanoidRootPart.Position - point.Position).Magnitude < 3.5 then
+			index += 1
+		end
+		
+		if tick() - lastCheckTime > 0.5 then
+			
+			local distMoved = (HumanoidRootPart.Position - lastCheckPos).Magnitude
+			if distMoved < stuckThreshold then
+				stopMovement() 
+			end
+			lastCheckPos = HumanoidRootPart.Position
+			lastCheckTime = tick()
+			
+		end
+		
+	end)
+end
+
+local function MoveTo(VictimPos)
+	task.spawn(function()
+		
+		if Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Forward Dashing") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Ability") then return end
+		
+		if (VictimPos - lastGoalPos).Magnitude < updateDistance then
+			return 
+		end
+		
+		if hasLineOfSight(VictimPos) then
+			stopMovement()
+			Humanoid:MoveTo(VictimPos)
+			lastGoalPos = VictimPos
+			return
+		end
+		
+		local path = PathfindingService:CreatePath({
+			AgentRadius = 3,
+			AgentCanJump = true,
+			WaypointSpacing = 4
+		})
+
+		local success, _ = pcall(function()
+			path:ComputeAsync(HumanoidRootPart.Position, VictimPos)
+		end)
+
+		if success and path.Status == Enum.PathStatus.Success then
+			lastGoalPos = VictimPos
+			followPath(path:GetWaypoints())
+		else
+			Humanoid:MoveTo(VictimPos)
+		end
+		
+	end)
+end
+
+local Victim = nil
+local VictimPos = nil
+
+local Blocking = false
+local Walking = false
+local Running = false
+local MovingTo = false
+local Punching = false
+local PCooldown = false
+
+task.spawn(function()
+	while true do
+		
+		if Character.Parent == nil or Humanoid:GetState() == Enum.HumanoidStateType.Dead then
+			break
+		end
+		
+		if Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") then
+			Blocking = false
+			Walking = false
+			Running = false
+			Punching = false
+		end
+		
+		local Disabling = nil
+		
+		if not Running then
+			Disabling = "Run"; Running = false
+		elseif not Walking then
+			Disabling = "Walking"; Walking = false
+		end
+		
+		if Disabling ~= nil then
+			for i, v in pairs(Animations) do
+				if tostring(i) == Disabling and v.IsPlaying then
+					
+					v:Stop(0.2)
+					
+				end
+			end
+		end
+		
+		task.spawn(function()
+			
+			Victim = nil
+			VictimPos = nil
+			
+			local ClosestDistance = math.huge
+
+			for _, v in pairs(workspace.Live:GetChildren()) do
+				if v:IsA("Model") and v ~= Character then
+
+					if Settings["Only Players"] == true then
+						if not game.Players:GetPlayerFromCharacter(v) then continue end
+					end
+
+					if Settings["Only Dummies"] == true then
+						if not v:HasTag("Dummy") then continue end
+					end
+
+					local vHumanoidRootPart = v:FindFirstChild("HumanoidRootPart")
+					local vHumanoid = v:FindFirstChildOfClass("Humanoid")
+
+					if vHumanoidRootPart and vHumanoid and vHumanoid.Health > 0 then
+
+						local Distance = (HumanoidRootPart.Position - vHumanoidRootPart.Position).Magnitude
+
+						if Distance < Settings["Max Distance"] and Distance < ClosestDistance then
+							ClosestDistance = Distance
+							Victim = v
+							VictimPos = vHumanoidRootPart.Position
+						end
+
+					end
+
+				end
+			end
+			
+		end)
+		
+		if AlignOrientation.Enabled == true then
+			if Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Cant Rotate") or currentConnection ~= nil then
+				
+				if AlignOrientation.Enabled then
+					AlignOrientation.Enabled = false
+				end
+
+			end
+		else
+			if not Modifiers:FindFirstChild("Ragdoll") and not Modifiers:FindFirstChild("Cant Rotate") and currentConnection == nil then
+
+				if not AlignOrientation.Enabled then
+					AlignOrientation.Enabled = true
+				end
+
+			end
+		end
+		
+		local CanContinue = false
+		
+		if Victim and VictimPos then
+			CanContinue = true
+		end
+		
+		if CanContinue then
+			
+			if VictimPos and AlignOrientation.Enabled == true then
+
+				if Modifiers:FindFirstChild("Side Dashing") then
+
+					local Modifier = Modifiers:FindFirstChild("Side Dashing")
+
+					local Angle = 90
+
+					if Modifier:GetAttribute("Side") == "Left" then
+						Angle = -90
+					end
+					
+					if Modifier:GetAttribute("Retreat") then
+						if Modifier:GetAttribute("Side") == "Left" then
+							Angle = 15
+						else
+							Angle = -15
+						end
+					end
+
+					local TargetPos = Vector3.new(VictimPos.X, HumanoidRootPart.Position.Y, VictimPos.Z)
+					local BaseLookAt = CFrame.lookAt(HumanoidRootPart.Position, TargetPos)
+
+					AlignOrientation.CFrame = BaseLookAt * CFrame.Angles(0, math.rad(Angle), 0)
+
+				else
+
+					local TargetPos = Vector3.new(VictimPos.X, HumanoidRootPart.Position.Y, VictimPos.Z)
+					AlignOrientation.CFrame = CFrame.lookAt(HumanoidRootPart.Position, TargetPos)
+
+				end
+
+				if MovingTo then
+
+					local Distance = (HumanoidRootPart.Position - VictimPos).Magnitude
+					local CanMoveTo = true
+
+					if not ByPass(Character, Victim, 0, true, true, true) or Humanoid.WalkSpeed <= 0 or Distance <= 5 or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Ragdoll") then CanMoveTo = false end
+
+					if CanMoveTo then
+						
+						local Action = "MoveTo"
+						
+						if Distance < Settings["Retreat Distance"] and not Blocking then
+							if Victim.Modifiers:FindFirstChild("Forward Dashing") or Victim.Modifiers:FindFirstChild("Attacking") or Victim.Modifiers:FindFirstChild("Ragdoll") or Victim.Modifiers:FindFirstChild("Ability") then
+								
+								Action = "Retreat"
+								
+							end
+						end
+						
+						if Action == "Retreat" then
+							if not Modifiers:FindFirstChild("Stunned") then
+								
+								local directionAway = (HumanoidRootPart.Position - VictimPos).Unit
+								local retreatPos = HumanoidRootPart.Position + Vector3.new(directionAway.X, 0, 0) * 15
+
+								Humanoid:MoveTo(retreatPos)
+								
+							end
+						else
+							if not Modifiers:FindFirstChild("Stunned") then
+								
+								local Direction = (HumanoidRootPart.Position - VictimPos).Unit
+								local TargetPosition = VictimPos + (Direction * 2.35)
+
+								MoveTo(TargetPosition)
+								
+							end
+						end
+
+					end
+
+				end
+
+			end
+
+			if Running then
+
+				local CanRun = true
+
+				if Blocking or Modifiers:FindFirstChild("Blocking") or Animations["Block"].IsPlaying or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") then CanRun = false end
+
+				if CanRun then
+					
+					Walking = false
+
+					for i, v in pairs(Animations) do
+						if tostring(i) ~= tostring("Run") and v.IsPlaying then
+
+							v:Stop(0.2)
+
+						end
+					end
+
+					if not Animations["Run"].IsPlaying then
+						Animations["Run"]:Play()
+					end
+
+					Humanoid.WalkSpeed = 21.8
+
+				end
+
+			end
+
+			if Walking then
+
+				local CanWalk = true
+
+				if Modifiers:FindFirstChild("Blocking") or Animations["Block"].IsPlaying or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") then CanWalk = false end
+
+				if CanWalk then
+					
+					Running = false
+
+					for i, v in pairs(Animations) do
+						if tostring(i) ~= tostring("Walk") and v.IsPlaying then
+
+							v:Stop(0.2)
+
+						end
+					end
+
+					if not Animations["Walk"].IsPlaying then
+						Animations["Walk"]:Play()
+					end
+
+					Humanoid.WalkSpeed = 11.2
+
+				end
+
+			end
+
+			if Blocking then
+
+				local CanBlock = true
+
+				if Modifiers:FindFirstChild("Blocking") or Animations["Block"].IsPlaying or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") then CanBlock = false end
+
+				if CanBlock then
+
+					Sound(Character:FindFirstChild("HumanoidRootPart"), ServerStorage["Sounds"]["Combat"]["Block"])
+
+					local Slowed_Down = Instance.new("Accessory")
+					Slowed_Down.Name = "Slowed Down"
+					Slowed_Down.Parent = Character.Modifiers
+					table.insert(additionalItems["Block"], Slowed_Down)
+
+					local Cant_Jump = Instance.new("Accessory")
+					Cant_Jump.Name = "Cant Jump"
+					Cant_Jump.Parent = Character.Modifiers
+					table.insert(additionalItems["Block"], Cant_Jump)
+
+					local Blocking = Instance.new("Accessory")
+					Blocking.Name = "Blocking"
+					Blocking.Parent = Modifiers
+					table.insert(additionalItems["Block"], Blocking)
+
+					if not Animations["Block"].IsPlaying then
+						Animations["Block"]:Play(0.2)
+					end
+
+				end
+
+			else
+
+				if #additionalItems["Block"] <= 0 then else
+					for i, v in pairs(additionalItems["Block"]) do
+
+						v:Destroy()
+
+					end
+				end
+
+				if Animations["Block"].IsPlaying then
+					Animations["Block"]:Stop(0.2)
+				end
+
+			end
+
+			if Punching then
+				
+				local Distance = (HumanoidRootPart.Position - VictimPos).Magnitude
+				local CanPunch = true
+
+				if PCooldown or DashesPlaying["Forward"] or Distance > Settings["Combat Distance"] or Modifiers:FindFirstChild("Ability") or Victim.Modifiers:FindFirstChild("Blocking") or Victim.Modifiers:FindFirstChild("Ragdoll") then CanPunch = false end
+
+				if CanPunch then
+
+					PCooldown = true; task.delay(0.25, function()
+						PCooldown = false
+					end)
+
+					require(script:FindFirstChild("Combat"))(Character, nil, nil)
+
+				end
+
+			end
+			
+		else
+			
+			Blocking = false
+			Punching = false
+			Walking = false
+			Running = false
+			MovingTo = false
+			
+			for i, v in pairs(Animations) do
+				if tostring(i) ~= "Idle" and v.IsPlaying then
+					
+					v:Stop(0.2)
+					
+				end
+			end
+			
+			if not Animations["Idle"].IsPlaying then
+				Animations["Idle"]:Play(0.2)
+			end
+			
+		end
+		
+		task.wait()
+		
+	end
+end)
+
+task.spawn(function()
+	while true do
+		
+		if Character.Parent == nil or Humanoid:GetState() == Enum.HumanoidStateType.Dead then
+			break
+		end
+		
+		if Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") then
+			Blocking = false
+		end
+		
+		local CanContinue = true
+
+		if Modifiers:FindFirstChild("Stunned") then
+			CanContinue = false
+		end
+
+		if CanContinue then
+
+			if Victim then
+				
+				local VictimHumanoidRootPart = Victim:FindFirstChild("HumanoidRootPart")
+
+				if VictimHumanoidRootPart then
+					
+					local Distance = (HumanoidRootPart.Position - VictimPos).Magnitude
+					
+					task.spawn(function()
+
+						local Action = nil
+						
+						if Distance < Settings["Dash Distance"]["Forward"] and Distance > (Settings["Dash Distance"]["Ban"] * 2) then
+							
+							local CanDash = true
+
+							if DashCooldowns["Forward"] or not ByPass(Character, Victim, 0, true, false, false) or Distance <= (Settings["Dash Distance"]["Ban"] * 2) or Victim.Modifiers:FindFirstChild("Ability") or Victim.Modifiers:FindFirstChild("Blocking") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ability") then CanDash = false end
+
+							if CanDash then
+								Action = "Forward Dash"
+							end
+
+						elseif Distance < Settings["Dash Distance"]["Left"] or Distance < Settings["Dash Distance"]["Right"] and Distance > Settings["Dash Distance"]["Ban"] then
+							
+							local PossibleAction = nil
+							
+							if Distance <= Settings["Retreat Distance"] then
+								PossibleAction = "Retreat Dash"
+							else
+								PossibleAction = "Side Dash"
+							end
+							
+							local CanDash = true
+
+							if Distance < Settings["Dash Distance"]["Ban"] or Victim.Modifiers:FindFirstChild("Ragdoll") or Victim.Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Side Dashing") or Modifiers:FindFirstChild("Forward Dashing") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ability") then CanDash = false end
+
+							if CanDash then
+								Action = PossibleAction
+							end
+							
+						end
+						
+						if Action == "Forward Dash" then
+							
+							Dash("Forward")
+							
+						elseif Action == "Side Dash" or Action == "Retreat Dash" then
+							
+							local function Available()
+
+								local Directions = {"Left", "Right"}
+								local firstChosen = Directions[math.random(1, #Directions)]
+								firstChosen = tostring(firstChosen)
+
+								local secondChosen = (firstChosen == "Left") and "Right" or "Left"
+								secondChosen = tostring(secondChosen)
+
+								if not DashCooldowns[firstChosen] then
+									return firstChosen
+								elseif not DashCooldowns[secondChosen] then
+									return secondChosen
+								else
+									return nil
+								end
+
+							end
+
+							local Chosen = Available()
+							local Cancel = false
+							local Retreat = false
+							
+							if Modifiers:FindFirstChild("Ragdoll") and not DashCooldowns["Evasive"] then
+								Cancel = true
+							end
+							
+							if Victim.Modifiers:FindFirstChild("Ability") or Victim.Modifiers:FindFirstChild("Attacking") then
+								Retreat = true
+							end
+
+							if Chosen ~= nil then
+								Dash(Chosen, Cancel, Retreat)
+							end
+							
+						end
+
+					end)
+					
+					task.spawn(function()
+						
+						--// Movement \\--
+						
+						local Action = "Run"
+
+						if Distance < Settings["Walk Distance"] then
+							Action = "Walk"
+						end
+
+						if Victim.Modifiers:FindFirstChild("Forward Dashing") or Victim.Modifiers:FindFirstChild("Attacking") then
+							if Distance < Settings["Block Distance"] and not Modifiers:FindFirstChild("Stunned") and not Modifiers:FindFirstChild("Ability") and not Modifiers:FindFirstChild("Ragdoll") and not Modifiers:FindFirstChild("Forward Dashing") then
+
+								local Forward = VictimHumanoidRootPart.CFrame.LookVector
+								local Direction = (HumanoidRootPart.Position - VictimPos).Unit
+
+								local DotProduct = Forward:Dot(Direction)
+
+								if DotProduct > 0.5 then
+									Action = "Block"
+								end
+
+							else
+								Blocking = false
+							end
+						else
+							Blocking = false
+						end
+
+						if Action == "Block" then
+							Blocking = true; MovingTo = true
+						else
+							Blocking = false
+						end
+
+						if Action == "Walk" then
+
+							local CanWalk = true
+
+							if Modifiers:FindFirstChild("Cant Move") or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Slowed Down") or Modifiers:FindFirstChild("Forward Dashing") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Side Dashing") then
+								CanWalk = false
+							end
+
+							if CanWalk then
+								Walking = true; MovingTo = true
+							else
+								Walking = false
+							end
+
+						elseif Action == "Run" then
+
+							local CanRun = true
+
+							if Modifiers:FindFirstChild("Cant Move") or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Slowed Down") or Modifiers:FindFirstChild("Forward Dashing") or Modifiers:FindFirstChild("Ragdoll") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Side Dashing") then
+								CanRun = false
+							end
+
+							if CanRun then
+								Running = true; MovingTo = true
+							else
+								Running = false
+							end
+
+						end
+						
+					end)
+					
+					task.spawn(function()
+						
+						--// Combat \\--
+						
+						local Action = "Ability"
+						local Chosen = nil
+						
+						local Abilities = 0
+						
+						for _, v in pairs(Moveset:GetChildren()) do
+							if v:IsA("StringValue") then
+
+								local abilityIndex = tonumber(v.Name)
+								if not abilityIndex then continue end
+
+								local Range = Settings["Ability Distances"][abilityIndex]
+
+								if Range and Distance < Range and Distance > Settings["Combat Distance"] and v:GetAttribute("Cooldown") ~= true then
+									Abilities += 1
+								end
+
+							end
+						end
+						
+						if Distance < Settings["Combat Distance"] then
+							
+							if Abilities == 0 then
+								Action = "Combat"
+							end
+							
+						end
+
+						if Action == "Combat" then
+							Punching = true; MovingTo = true
+						elseif Action == "Ability" and Abilities ~= 0 then
+
+							local CanUse = true
+
+							if DashesPlaying["Forward"] or Modifiers:FindFirstChild("Attacking") or Modifiers:FindFirstChild("Ability") or Modifiers:FindFirstChild("Stunned") or Modifiers:FindFirstChild("Ragdoll") then
+								CanUse = false
+							end
+
+							if CanUse then
+								for _, v in pairs(Moveset:GetChildren()) do
+									if v:IsA("StringValue") then
+
+										local abilityIndex = tonumber(v.Name)
+										if not abilityIndex then continue end
+
+										if v:GetAttribute("Cooldown") == true then
+											continue
+										end
+
+										local Range = Settings["Ability Distances"][abilityIndex]
+
+										if Range and Distance < Range then
+
+											local ModuleScript = nil
+
+											for _, g in pairs(Moveset:GetDescendants()) do
+												if g:IsA("ModuleScript") and tostring(g) == v.Value then
+
+													ModuleScript = require(g)
+
+												end
+											end
+
+											if ModuleScript then
+												ModuleScript(Character)
+											end
+
+											break
+
+										end
+
+									end
+								end
+							end
+						end
+						
+					end)
+					
+				end
+				
+			end
+			
+		end
+		
+		task.wait(0.25)
+		
+	end
+end)
+
+--// Modifiers \\--
+
+local function modifyCharacter()
+
+	updateCache()
+
+	local WalkSpeed = 16
+	local JumpHeight = 7.2
+	local AutoRotate = true
+	
+	if Running then WalkSpeed = 21.8 end
+
+	if Mods_Cache["Slowed Down"] then WalkSpeed /= 1.5 end
+	if Mods_Cache["Cant Rotate"] then AutoRotate = false end
+	if Mods_Cache["Cant Move"] then WalkSpeed = 0 end
+	if Mods_Cache["Cant Jump"] then JumpHeight = 0 end
+	if Mods_Cache["Stunned"] then WalkSpeed = 0; JumpHeight = 0 end
+	if Mods_Cache["Ragdoll"] then WalkSpeed = 0; JumpHeight = 0; AutoRotate = false end
+
+	Humanoid.WalkSpeed = WalkSpeed
+	Humanoid.JumpHeight = JumpHeight
+	Humanoid.AutoRotate = AutoRotate
+
+end
+
+Modifiers.ChildAdded:Connect(modifyCharacter)
+Modifiers.ChildRemoved:Connect(modifyCharacter)
+
+modifyCharacter()
